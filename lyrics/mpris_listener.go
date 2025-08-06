@@ -52,6 +52,8 @@ func (watcher *MPrisListener) ConnectSessionBus(withLog bool) error {
 	return nil
 }
 
+// SynchronizedLyrics Synchronized lyrics
+// 同步歌词
 func (watcher *MPrisListener) SynchronizedLyrics(withLog bool, delay uint32) {
 	ticker := time.NewTicker(time.Duration(delay) * time.Millisecond)
 	defer ticker.Stop()
@@ -76,151 +78,186 @@ func (watcher *MPrisListener) SynchronizedLyrics(withLog bool, delay uint32) {
 	}
 }
 
-func (watcher *MPrisListener) MonitorAudioChanges(withLog bool) {
-	defer watcher.conn.Close()
-	channel := make(chan *dbus.Signal, 16)
-	watcher.conn.Signal(channel)
-	var audioFilePath string
+func (watcher *MPrisListener) WatchPlayerEvents(withLog bool) {
+	defer func(conn *dbus.Conn) {
+		err := conn.Close()
+		if err != nil {
+			if withLog {
+				log.Println("close dbus error:", err)
+			}
+		}
+	}(watcher.conn)
+
+	ch := make(chan *dbus.Signal, 16)
+	watcher.conn.Signal(ch)
 	if withLog {
 		log.Println("Signal channel created, start listening")
 	}
-	for signal := range channel {
-		if !strings.HasPrefix(string(signal.Path), "/org/mpris/MediaPlayer2") {
-			if withLog {
-				log.Println("[DEBUG] Signal path does not match MPRIS prefix, skipping")
-			}
+
+	for sig := range ch {
+		if !watcher.isMarisSignal(sig, withLog) {
 			continue
 		}
-		if len(signal.Body) < 2 {
-			if withLog {
-				log.Println("[DEBUG] Signal body length less than 2, skipping")
-			}
-			continue
+		watcher.handleSignal(sig, withLog)
+	}
+}
+
+func (watcher *MPrisListener) isMarisSignal(sig *dbus.Signal, withLog bool) bool {
+	if !strings.HasPrefix(string(sig.Path), "/org/mpris/MediaPlayer2") {
+		if withLog {
+			log.Println("[DEBUG] Signal path does not match MPRIS prefix, skipping")
 		}
-
-		changedProps, ok := signal.Body[1].(map[string]dbus.Variant)
-		if !ok {
-			if withLog {
-				log.Println("[WARN] Failed to cast signal.Body[1] to map[string]dbus.Variant")
-			}
-			continue
+		return false
+	}
+	if len(sig.Body) < 2 {
+		if withLog {
+			log.Println("[DEBUG] Signal body length less than 2, skipping")
 		}
+		return false
+	}
+	return true
+}
 
-		if metadataVar, exists := changedProps["Metadata"]; exists {
-			metadata := metadataVar.Value().(map[string]dbus.Variant)
-			if urlVar, ok := metadata["xesam:url"]; ok {
-				urlStr := urlVar.Value().(string)
-				if withLog {
-					log.Printf("[DEBUG] Metadata xesam:url = %s\n", urlStr)
-				}
-				if strings.HasPrefix(urlStr, "file://") {
-					localPath := strings.TrimPrefix(urlStr, "file://")
-					decodedPath, err := url.PathUnescape(localPath)
-					if err != nil {
-						if withLog {
-							log.Printf("[ERROR] Failed to decode file path: %v\n", err)
-						}
-						continue
-					}
-					if withLog {
-						log.Printf("[DEBUG] Decoded file path: %s\n", decodedPath)
-					}
-					if isAudioFile(decodedPath) {
-						audioFilePath = decodedPath
-						watcher.playerBusName = signal.Sender
-						lrcPath := strings.TrimSuffix(decodedPath, filepath.Ext(decodedPath)) + ".lrc"
-						if withLog {
-							log.Printf("[DEBUG] Looking for lyric file: %s\n", lrcPath)
-						}
-						if _, err := os.Stat(lrcPath); err == nil {
-							watcher.getAllProperties()
-							var maxus, errorDuration = watcher.getSongDuration(decodedPath)
-							if errorDuration != nil {
-								if withLog {
-									log.Printf("[ERROR] Failed to get song duration: %v\n", err)
-								}
-							}
-							watcher.lyric, err = NewLyric(lrcPath, maxus)
-							if err != nil {
-								if withLog {
-									log.Printf("[ERROR] Failed to parse lyric file %s: %v\n", lrcPath, err)
-								}
-							} else {
-								if withLog {
-									log.Printf("[INFO] Loaded lyric file: %s\n", lrcPath)
-								}
-							}
-						} else {
-							if withLog {
-								log.Printf("[WARN] Lyric file not found: %s\n", lrcPath)
-							}
-						}
-					} else {
-						if withLog {
-							log.Printf("[DEBUG] File is not recognized audio file: %s\n", decodedPath)
-						}
-					}
-				}
-			}
+func (watcher *MPrisListener) handleSignal(sig *dbus.Signal, withLog bool) {
+	props, ok := sig.Body[1].(map[string]dbus.Variant)
+	if !ok {
+		if withLog {
+			log.Println("[WARN] Failed to cast signal.Body[1] to map[string]dbus.Variant")
 		}
+		return
+	}
 
-		if statusVar, exists := changedProps["PlaybackStatus"]; exists {
-			sender := signal.Sender
-			if watcher.playerBusName != sender {
-				if withLog {
-					log.Printf("[DEBUG] Signal sender %s is not the current player %s, skipping\n", sender, watcher.playerBusName)
-				}
-				continue
-			}
-			status := statusVar.Value().(string)
-			if withLog {
-				log.Printf("[INFO] PlaybackStatus changed: %s\n", status)
-			}
-			switch status {
-			case "Playing":
-				watcher.playing = true
-				if withLog {
-					log.Printf("[INFO] Triggering Play callback for bus: %s, file: %s\n", watcher.playerBusName, audioFilePath)
-				}
-				if watcher.CallBack != nil {
-					watcher.CallBack.Play(watcher.playerBusName, audioFilePath, watcher.lyric)
-				}
+	if path := watcher.extractLocalPath(props, withLog); path != "" {
+		watcher.onAudioFileChanged(path, sig.Sender, withLog)
+	}
 
-			case "Stopped":
-				watcher.playing = false
-				if withLog {
-					log.Printf("[INFO] Triggering Stop callback for bus: %s, file: %s\n", watcher.playerBusName, audioFilePath)
-				}
-				if watcher.CallBack != nil {
-					watcher.CallBack.Stop(watcher.playerBusName, audioFilePath, watcher.lyric)
-				}
-			case "Paused":
-				watcher.playing = false
-				if withLog {
-					log.Printf("[INFO] Triggering Paused callback for bus: %s, file: %s\n", watcher.playerBusName, audioFilePath)
-				}
-				if watcher.CallBack != nil {
-					watcher.CallBack.Paused(watcher.playerBusName, audioFilePath, watcher.lyric)
-				}
-			default:
-				if withLog {
-					log.Printf("[WARN] Unknown playback status: %s\n", status)
-				}
-			}
+	if status := watcher.extractStatus(props); status != "" {
+		watcher.onPlaybackStatusChanged(status, withLog)
+	}
+}
+
+func (watcher *MPrisListener) extractLocalPath(props map[string]dbus.Variant, withLog bool) string {
+	metaVar, ok := props["Metadata"]
+	if !ok {
+		return ""
+	}
+	meta := metaVar.Value().(map[string]dbus.Variant)
+	urlVar, ok := meta["xesam:url"]
+	if !ok {
+		return ""
+	}
+	urlStr := urlVar.Value().(string)
+	if withLog {
+		log.Printf("[DEBUG] Metadata xesam:url = %s\n", urlStr)
+	}
+	if !strings.HasPrefix(urlStr, "file://") {
+		return ""
+	}
+	local := strings.TrimPrefix(urlStr, "file://")
+	decoded, err := url.PathUnescape(local)
+	if err != nil {
+		if withLog {
+			log.Printf("[ERROR] Failed to decode file path: %v\n", err)
+		}
+		return ""
+	}
+	if withLog {
+		log.Printf("[DEBUG] Decoded file path: %s\n", decoded)
+	}
+	if !isAudioFile(decoded) {
+		if withLog {
+			log.Printf("[DEBUG] File is not recognized audio file: %s\n", decoded)
+		}
+		return ""
+	}
+	return decoded
+}
+
+func (watcher *MPrisListener) onAudioFileChanged(path, sender string, withLog bool) {
+	watcher.playerBusName = sender
+	lrcPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".lrc"
+	if withLog {
+		log.Printf("[DEBUG] Looking for lyric file: %s\n", lrcPath)
+	}
+	if _, err := os.Stat(lrcPath); err != nil {
+		if withLog {
+			log.Printf("[WARN] Lyric file not found: %s\n", lrcPath)
+		}
+		return
+	}
+	err := watcher.getAllProperties()
+	if err != nil {
+		if withLog {
+			log.Printf("[ERROR] Failed get all properties: %v\n", err)
+		}
+		return
+	}
+	dur, err := watcher.getSongDuration(path)
+	if err != nil {
+		if withLog {
+			log.Printf("[ERROR] Failed to get song duration: %v\n", err)
+		}
+		return
+	}
+	watcher.lyric, err = NewLyric(lrcPath, dur)
+	if err != nil {
+		if withLog {
+			log.Printf("[ERROR] Failed to parse lyric file %s: %v\n", lrcPath, err)
+		}
+	} else if withLog {
+		log.Printf("[INFO] Loaded lyric file: %s\n", lrcPath)
+	}
+}
+
+func (watcher *MPrisListener) extractStatus(props map[string]dbus.Variant) string {
+	sv, ok := props["PlaybackStatus"]
+	if !ok {
+		return ""
+	}
+	return sv.Value().(string)
+}
+
+func (watcher *MPrisListener) onPlaybackStatusChanged(status string, withLog bool) {
+	if watcher.playerBusName == "" {
+		return
+	}
+	switch status {
+	case "Playing":
+		watcher.playing = true
+		if withLog {
+			log.Printf("[INFO] Triggering Play callback for bus: %s\n", watcher.playerBusName)
+		}
+		if watcher.CallBack != nil {
+			watcher.CallBack.Play(watcher.playerBusName, "", watcher.lyric)
+		}
+	case "Stopped":
+		watcher.playing = false
+		if withLog {
+			log.Printf("[INFO] Triggering Stop callback for bus: %s\n", watcher.playerBusName)
+		}
+		if watcher.CallBack != nil {
+			watcher.CallBack.Stop(watcher.playerBusName, "", watcher.lyric)
+		}
+	case "Paused":
+		watcher.playing = false
+		if withLog {
+			log.Printf("[INFO] Triggering Paused callback for bus: %s\n", watcher.playerBusName)
+		}
+		if watcher.CallBack != nil {
+			watcher.CallBack.Paused(watcher.playerBusName, "", watcher.lyric)
+		}
+	default:
+		if withLog {
+			log.Printf("[WARN] Unknown playback status: %s\n", status)
 		}
 	}
 }
 
 func (watcher *MPrisListener) getAllProperties() error {
-	// 获取当前播放的音频播放器的 Object
 	if watcher.playerBusName == "" {
 		return fmt.Errorf("no player bus name set")
 	}
-
-	// 获取当前播放器的 Object
 	obj := watcher.conn.Object(watcher.playerBusName, "/org/mpris/MediaPlayer2")
-
-	// 调用 "GetAll" 方法获取所有的属性
 	var properties map[string]dbus.Variant
 	err := obj.Call("org.freedesktop.DBus.Properties.GetAll", 0, "org.mpris.MediaPlayer2.Player").Store(&properties)
 	if err != nil {

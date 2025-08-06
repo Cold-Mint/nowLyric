@@ -10,17 +10,24 @@ import (
 	"strings"
 )
 
+// Lyric
+// 歌词对象
 type Lyric struct {
-	Lines []LyricLine
-	Maxus uint64 //The maximum length of the song, subtle
+	Lines    []LyricLine
+	Duration uint64 //The total duration of the song, with subtle units. 歌曲总时长，单位微妙。
+	lastIdx  int
 }
+
+// LyricLine
+// 歌词行对象
 type LyricLine struct {
 	TimeUs uint64 //Microsecond, a 64-bit unsigned integer
 	Text   string //Lyrics text
 }
 
-// Song path, maximum length of the song
-func NewLyric(path string, maxus uint64) (*Lyric, error) {
+// NewLyric Create the lyrics file object based on the file path and the duration of the audio file.
+// 通过文件路径和音频文件时长来创建歌词文件对象。
+func NewLyric(path string, duration uint64) (*Lyric, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -49,46 +56,36 @@ func NewLyric(path string, maxus uint64) (*Lyric, error) {
 	sort.Slice(lines, func(i, j int) bool {
 		return lines[i].TimeUs < lines[j].TimeUs
 	})
-	return &Lyric{Lines: lines, Maxus: maxus}, nil
+	return &Lyric{Lines: lines, Duration: duration}, nil
 }
 
-// 根据微妙数获取当播放的歌词
-func (l *Lyric) GetLineUs(positionUs uint64) (string, float64) {
+// LineAt  Obtain the corresponding line lyrics based on the microseconds currently being played. How much has progress sung for the content of this line?
+// 根据当前播放的微妙数获取对应的行歌词。progress为本行内容演唱了多少。
+func (l *Lyric) LineAt(posUs uint64) (text string, progress float64) {
 	if len(l.Lines) == 0 {
 		return "", 0
 	}
-
-	// 查找当前歌词所在位置的索引
+	if l.lastIdx >= 0 && l.lastIdx < len(l.Lines) {
+		cur := l.Lines[l.lastIdx]
+		nextUs := l.Duration
+		if l.lastIdx+1 < len(l.Lines) {
+			nextUs = l.Lines[l.lastIdx+1].TimeUs
+		}
+		if posUs >= cur.TimeUs && posUs < nextUs {
+			return cur.Text, float64(posUs-cur.TimeUs) / float64(nextUs-cur.TimeUs)
+		}
+	}
 	idx := sort.Search(len(l.Lines), func(i int) bool {
-		return l.Lines[i].TimeUs > positionUs
+		return l.Lines[i].TimeUs > posUs
 	})
-
-	// 如果没有找到，则说明当前没有歌词
 	if idx == 0 {
 		return "", 0
 	}
-
-	// 获取当前歌词的起始时间
-	currentLyric := l.Lines[idx-1]
-	var nextLyric LyricLine
-
-	// 如果已经是最后一句歌词，使用歌曲的最大长度作为结束时间
+	l.lastIdx = idx - 1
+	cur := l.Lines[l.lastIdx]
+	next := LyricLine{TimeUs: l.Duration}
 	if idx < len(l.Lines) {
-		nextLyric = l.Lines[idx]
-	} else {
-		// 歌曲的结束时间就是最大时长
-		nextLyric = LyricLine{TimeUs: l.Maxus}
+		next = l.Lines[idx]
 	}
-
-	// 计算当前歌词的播放进度
-	timeDiff := nextLyric.TimeUs - currentLyric.TimeUs
-	if timeDiff == 0 {
-		return currentLyric.Text, 1 // 如果没有时间差，表示这句已经播放完
-	}
-
-	progress := float64(positionUs-currentLyric.TimeUs) / float64(timeDiff)
-	//log.Printf("[ERROR] 当前时刻%d 结束时刻%d 最大长度%d\n", currentLyric.TimeUs, nextLyric.TimeUs, l.Maxus)
-
-	// 返回当前歌词和进度
-	return currentLyric.Text, progress
+	return cur.Text, float64(posUs-cur.TimeUs) / float64(next.TimeUs-cur.TimeUs)
 }

@@ -21,15 +21,15 @@ var printCmd = &cobra.Command{
 		if err != nil {
 			delayVal = 100
 		}
-		mprisWatcher := &lyrics.MprisWatcher{}
-		err = mprisWatcher.ConnectSessionBus(withLog)
+		MPrisListener := &lyrics.MPrisListener{}
+		err = MPrisListener.ConnectSessionBus(withLog)
 		if err != nil {
 			return
 		}
-		mprisWatcher.CallBack = &lyrics.LyricCallback{OnlyTranslation: onlyTranslation, OutputPath: outputPath}
-		go mprisWatcher.SynchronizedLyrics(withLog, uint32(delayVal))
+		MPrisListener.CallBack = &lyrics.LyricCallback{OnlyTranslation: onlyTranslation, OutputPath: outputPath}
+		go MPrisListener.SynchronizedLyrics(withLog, uint32(delayVal))
 		println("The lyrics monitoring process is ready. It will take effect when you start playing music or switch to the next song.")
-		mprisWatcher.MonitorAudioChanges(withLog)
+		MPrisListener.MonitorAudioChanges(withLog)
 	},
 }
 

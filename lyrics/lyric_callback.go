@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"unsafe"
 )
 
 type LyricCallback struct {
@@ -21,37 +23,33 @@ func (lc *LyricCallback) Stop(playerBusName string, audioFilePath string, lyric 
 func (lc *LyricCallback) Paused(playerBusName string, audioFilePath string, lyric *Lyric) {
 }
 
-func (lc *LyricCallback) UpdateLyric(playerBusName string, line string, progress float64, lyric *Lyric) {
+func (lc *LyricCallback) UpdateLyric(playerBusName, line string, progress float64, lyric *Lyric) {
 	str := line
 	if lc.OnlyTranslation {
-		sep := "  "
-		idx := strings.Index(str, sep)
-		if idx > -1 {
-			str = str[idx+len(sep):]
+		if idx := strings.Index(str, "  "); idx > -1 {
+			str = str[idx+2:]
 		}
 	}
-	if lc.lastLine != str {
-		lc.lastLine = str
-		println(str)
-		if strings.TrimSpace(lc.OutputPath) != "" {
-			err := WriteToFile(lc.OutputPath, str)
-			if err != nil {
-				return
-			}
-		}
+	if lc.lastLine == str {
+		return
+	}
+	lc.lastLine = str
+	println(str)
+	if lc.OutputPath != "" {
+		_ = WriteToFile(lc.OutputPath, str) // 忽略错误，或打印日志
 	}
 }
 
-// WriteToFile 将 content 写入指定文件
-// 如果目录不存在会自动创建
-func WriteToFile(outputPath string, content string) error {
-	// 确保目录存在
-	dir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
+// The directory is created only once 目录只创建一次
+var dirOnce sync.Once
+var dirErr error
 
-	// 写入文件（覆盖式写入）
-	err := os.WriteFile(outputPath, []byte(content), 0644)
-	return err
+func WriteToFile(outputPath, content string) error {
+	dirOnce.Do(func() {
+		dirErr = os.MkdirAll(filepath.Dir(outputPath), 0755)
+	})
+	if dirErr != nil {
+		return dirErr
+	}
+	return os.WriteFile(outputPath, unsafe.Slice(unsafe.StringData(content), len(content)), 0644)
 }

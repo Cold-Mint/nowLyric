@@ -1,14 +1,22 @@
 package lyrics
 
-type MprisCallBack interface {
-	//播放某个音乐时（路径可能为空）
+// MusicEventCallback Music event callback
+// 音乐事件回调
+type MusicEventCallback interface {
+
+	// Play
+	//播放音频时
 	Play(playerBusName string, audioFilePath string, lyric *Lyric)
 
-	//停止播放某个音乐时（路径可能为空）
+	// Stop
+	//停止播放音频时
 	Stop(playerBusName string, audioFilePath string, lyric *Lyric)
 
-	//暂停播放某个音乐时（路径可能为空）
+	// Paused
+	// 暂停播放音频时
 	Paused(playerBusName string, audioFilePath string, lyric *Lyric)
 
+	// UpdateLyric
+	// 当需要更新歌词时
 	UpdateLyric(playerBusName string, line string, progress float64, lyric *Lyric)
 }

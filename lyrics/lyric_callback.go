@@ -47,7 +47,7 @@ func (lc *LyricCallback) UpdateLyric(playerBusName, line string, progress float6
 	if lc.RichText {
 		runes := []rune(str)
 		total := len(runes)
-		played := int(float64(total) * (progress + lc.Offset))
+		played := min(int(float64(total)*(progress+lc.Offset)), total)
 		playedStr := string(runes[:played])
 		unplayedStr := string(runes[played:])
 		out = fmt.Sprintf(

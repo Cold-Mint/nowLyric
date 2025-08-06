@@ -21,6 +21,10 @@ var printCmd = &cobra.Command{
 		var supportExecute = cmd.Flag("supportExecute").Value.String() == "true"
 		var playedTextColor = cmd.Flag("playedTextColor").Value.String()
 		var unplayedTextColor = cmd.Flag("unplayedTextColor").Value.String()
+		var defaultContent = cmd.Flag("defaultContent").Value.String()
+		if outputPath != "" {
+			_ = lyrics.WriteToFile(outputPath, defaultContent)
+		}
 		raw := cmd.Flag("offset").Value.String()
 		offset, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
@@ -51,6 +55,7 @@ var printCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(printCmd)
 	printCmd.Flags().StringP("outputPath", "o", "", "Synchronize and output the latest line of lyrics to the text file.")
+	printCmd.Flags().StringP("defaultContent", "c", "", "The outputPath must not be empty.The content of the file written by default when the program starts.")
 	printCmd.Flags().Uint32P("delay", "d", 100, "The delay for synchronizing lyrics, measured in milliseconds.")
 	printCmd.Flags().BoolP("withLog", "l", false, "Whether to output logs.")
 	printCmd.Flags().BoolP("onlyTranslation", "t", false, "Only display the translation.")

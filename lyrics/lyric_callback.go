@@ -51,15 +51,15 @@ func (lc *LyricCallback) UpdateLyric(playerBusName, line string, progress float6
 		playedStr := string(runes[:played])
 		unplayedStr := string(runes[played:])
 		out = fmt.Sprintf(
-			` <span foreground='%s'>%s</span>`+
-				` <span foreground='%s'>%s</span>`,
+			`<span foreground='%s'>%s</span>`+
+				`<span foreground='%s'>%s</span>`,
 			lc.PlayedTextColor, playedStr,
 			lc.UnplayedTextColor, unplayedStr)
 	} else {
 		out = str
 	}
 	if lc.SupportExecute {
-		out = "<executor.markup.true>" + out
+		out = "<executor.markup.true> " + out
 	}
 	if lc.lastLine == out {
 		return

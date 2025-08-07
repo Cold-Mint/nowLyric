@@ -30,7 +30,7 @@ Flags:
   default being #FFFFFF. (default "#FFFFFF")
 - -l, --withLog Whether to output logs.
 
-nowlyric print read
+nowlyric read
 
 Read the lyrics that are playing.
 
@@ -58,6 +58,6 @@ Flags:
 - -u, --unplayedTextColor string richText需要被启用。定义未播放部分的文本颜色，默认为#FFFFFF。
 - -l, --withLog 是否输出日志。
 
-nowlyric print read
+nowlyric read
 
 读取正在播放的歌词。

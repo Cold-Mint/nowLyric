@@ -2,10 +2,7 @@ package lyrics
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"unsafe"
 )
 
@@ -14,11 +11,12 @@ type LyricCallback struct {
 	WithLog           bool
 	RichText          bool
 	SupportExecute    bool
-	OutputPath        string
 	lastLine          string
 	PlayedTextColor   string
 	UnplayedTextColor string
 	Offset            float64
+	MmapOK            bool
+	Ptr               unsafe.Pointer
 }
 
 func (lc *LyricCallback) Play(playerBusName string, audioFilePath string, lyric *Lyric) {
@@ -32,9 +30,9 @@ func (lc *LyricCallback) Paused(playerBusName string, audioFilePath string, lyri
 
 func (lc *LyricCallback) UpdateLyric(playerBusName, line string, progress float64, lyric *Lyric) {
 	if lc.WithLog {
-		fmt.Printf("LyricCallback{OnlyTranslation:%v, WithLog:%v, RichText:%v, SupportExecute:%v, OutputPath:%q, lastLine:%q, PlayedTextColor:%q, UnplayedTextColor:%q, Offset:%f} progress=%f line=%q\n",
+		fmt.Printf("LyricCallback{OnlyTranslation:%v, WithLog:%v, RichText:%v, SupportExecute:%v, lastLine:%q, PlayedTextColor:%q, UnplayedTextColor:%q, Offset:%f} progress=%f line=%q\n",
 			lc.OnlyTranslation, lc.WithLog, lc.RichText, lc.SupportExecute,
-			lc.OutputPath, lc.lastLine, lc.PlayedTextColor, lc.UnplayedTextColor, lc.Offset,
+			lc.lastLine, lc.PlayedTextColor, lc.UnplayedTextColor, lc.Offset,
 			progress, line)
 	}
 	str := line
@@ -66,21 +64,7 @@ func (lc *LyricCallback) UpdateLyric(playerBusName, line string, progress float6
 	}
 	lc.lastLine = out
 	println(out)
-	if lc.OutputPath != "" {
-		_ = WriteToFile(lc.OutputPath, out)
+	if lc.MmapOK {
+		WriteCString(lc.Ptr, out, Size)
 	}
-}
-
-// The directory is created only once 目录只创建一次
-var dirOnce sync.Once
-var dirErr error
-
-func WriteToFile(outputPath, content string) error {
-	dirOnce.Do(func() {
-		dirErr = os.MkdirAll(filepath.Dir(outputPath), 0755)
-	})
-	if dirErr != nil {
-		return dirErr
-	}
-	return os.WriteFile(outputPath, unsafe.Slice(unsafe.StringData(content), len(content)), 0644)
 }

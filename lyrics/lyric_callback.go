@@ -16,6 +16,7 @@ type LyricCallback struct {
 	UnplayedTextColor string
 	Offset            float64
 	MmapOK            bool
+	DefaultContent    string
 	Ptr               unsafe.Pointer
 }
 
@@ -26,6 +27,9 @@ func (lc *LyricCallback) Stop(playerBusName string, audioFilePath string, lyric 
 }
 
 func (lc *LyricCallback) Paused(playerBusName string, audioFilePath string, lyric *Lyric) {
+	if lc.MmapOK {
+		WriteCString(lc.Ptr, lc.DefaultContent, Size)
+	}
 }
 
 func (lc *LyricCallback) UpdateLyric(playerBusName, line string, progress float64, lyric *Lyric) {

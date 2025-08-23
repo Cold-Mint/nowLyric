@@ -79,7 +79,7 @@ var printCmd = &cobra.Command{
 		if err != nil {
 			return
 		}
-		MPrisListener.CallBack = &lyrics.LyricCallback{OnlyTranslation: onlyTranslation, RichText: richText, SupportExecute: supportExecute, PlayedTextColor: playedTextColor, UnplayedTextColor: unplayedTextColor, Offset: offset, WithLog: withLog, MmapOK: mmapOK, Ptr: ptr}
+		MPrisListener.CallBack = &lyrics.LyricCallback{OnlyTranslation: onlyTranslation, RichText: richText, SupportExecute: supportExecute, PlayedTextColor: playedTextColor, UnplayedTextColor: unplayedTextColor, Offset: offset, WithLog: withLog, MmapOK: mmapOK, Ptr: ptr, DefaultContent: defaultContent}
 		go MPrisListener.SynchronizedLyrics(withLog, uint32(delayVal))
 		println("The lyrics monitoring process is ready. It will take effect when you start playing music or switch to the next song.")
 		MPrisListener.WatchPlayerEvents(withLog)
